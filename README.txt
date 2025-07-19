@@ -27,7 +27,8 @@ Features of DTDC Econnect WordPress Plugin
 ● Customer will get email Notification for there placed order with order/invoice number.
 ● Customer can track their orders on frontend by login with their email id which provide securities to their shipment.
 ● All the integrated web service will work on HTTPS ssl 128 bit encryption so there will be no data loss or information theft\\\\leakage to other parties.
-● Customer\\\'s can generate the AWB number via API ( Automatic AWB generation) or they can select the AWB number manually from their side by uploading the virtual series from backend.
+● Customer\'s can generate the AWB number via API ( Automatic AWB generation) or they can select the AWB number manually from their side by uploading the virtual series from backend.
+● Send WhatsApp notification with order and tracking details when the tracking link is generated.
 
 
 == Installation ==

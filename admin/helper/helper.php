@@ -344,11 +344,15 @@ function shipsy_settings( array $post_request_params ) {
 			$post_request_params['enable_customer_order_edit_option'] ) ? 1 : 0
 		);
 
-		shipsy_set_option(
-			'enable_auto_status_update_option',
-			( array_key_exists( 'enable_auto_status_update_option', $post_request_params ) &&
-			$post_request_params['enable_auto_status_update_option'] ) ? 1 : 0
-		);
+                shipsy_set_option(
+                        'enable_auto_status_update_option',
+                        ( array_key_exists( 'enable_auto_status_update_option', $post_request_params ) &&
+                        $post_request_params['enable_auto_status_update_option'] ) ? 1 : 0
+                );
+
+                shipsy_set_option( 'whatsapp_phone_id', $post_request_params['whatsapp_phone_id'] ?? '' );
+                shipsy_set_option( 'whatsapp_token', $post_request_params['whatsapp_token'] ?? '' );
+                shipsy_set_option( 'whatsapp_template', $post_request_params['whatsapp_template'] ?? '' );
 
 		if ( (int) shipsy_get_option( 'enable_auto_sync_option' ) ) {
 			shipsy_set_option(
@@ -959,20 +963,29 @@ function shipsy_add_tracking_url( string $order_id ): bool {
 	$request_url        = shipsy_get_endpoint( 'TRACKING_API' );
 	$response           = $request->post( $request_url, $args );
 	$result             = wp_remote_retrieve_body( $response );
-	$array2             = json_decode( $result, true );
-	if ( ! empty( $array2['data'] ) && $array2['success'] ) {
-		$table_name = $wpdb->prefix . 'sync_track_order';
+        $array2             = json_decode( $result, true );
+        if ( ! empty( $array2['data'] ) && $array2['success'] ) {
+                $table_name = $wpdb->prefix . 'sync_track_order';
 
-		$track_url = $array2['data'][ $order_id ];
-		// phpcs:disable
-		$wpdb->query(
-			$wpdb->prepare(
-				"UPDATE `$table_name` SET track_url=%s WHERE orderId=%s",
-				array( $track_url, $order_id )
-			)
-		);
-		// phpcs:enable
-		return true;
+                $track_url = $array2['data'][ $order_id ];
+                // phpcs:disable
+                $wpdb->query(
+                        $wpdb->prepare(
+                                "UPDATE `$table_name` SET track_url=%s WHERE orderId=%s",
+                                array( $track_url, $order_id )
+                        )
+                );
+                // phpcs:enable
+
+                $order = wc_get_order( $order_id );
+                if ( $order ) {
+                        $first_name  = $order->get_billing_first_name();
+                        $phone       = $order->get_billing_phone();
+                        $tracking_id = shipsy_get_ref_no( $order_id );
+                        shipsy_send_whatsapp_notification( $phone, $first_name, (string) $order_id, $tracking_id, $track_url );
+                }
+
+                return true;
 	} else {
 		return false;
 	}
@@ -1151,7 +1164,62 @@ function shipsy_slugify( string $text ): string {
 		return 'n-a';
 	}
 	// Return result.
-	return $text;
+        return $text;
+}
+
+/**
+ * Send WhatsApp notification using the cloud API.
+ *
+ * @param string $phone       Customer phone number.
+ * @param string $first_name  Customer first name.
+ * @param string $order_id    WooCommerce order ID.
+ * @param string $tracking_id Tracking reference number.
+ * @param string $track_url   Tracking URL.
+ *
+ * @return void
+ */
+function shipsy_send_whatsapp_notification( string $phone, string $first_name, string $order_id, string $tracking_id, string $track_url ) {
+        $token     = shipsy_get_option( 'whatsapp_token' );
+        $phone_id  = shipsy_get_option( 'whatsapp_phone_id' );
+        $template  = shipsy_get_option( 'whatsapp_template' );
+
+        if ( empty( $token ) || empty( $phone_id ) || empty( $template ) || empty( $phone ) ) {
+                return;
+        }
+
+        $url  = "https://graph.facebook.com/v18.0/{$phone_id}/messages";
+        $body = array(
+                'messaging_product' => 'whatsapp',
+                'to'                => $phone,
+                'type'              => 'template',
+                'template'          => array(
+                        'name'     => $template,
+                        'language' => array( 'code' => 'en_US' ),
+                        'components' => array(
+                                array(
+                                        'type'       => 'body',
+                                        'parameters' => array(
+                                                array( 'type' => 'text', 'text' => $first_name ),
+                                                array( 'type' => 'text', 'text' => $order_id ),
+                                                array( 'type' => 'text', 'text' => $tracking_id ),
+                                                array( 'type' => 'text', 'text' => $track_url ),
+                                        ),
+                                ),
+                        ),
+                ),
+        );
+
+        $args = array(
+                'headers' => array(
+                        'Authorization' => 'Bearer ' . $token,
+                        'Content-Type'  => 'application/json',
+                ),
+                'body'    => wp_json_encode( $body ),
+                'timeout' => '20',
+        );
+
+        $request = shipsy_get_request_handler();
+        $request->post( $url, $args );
 }
 
 
