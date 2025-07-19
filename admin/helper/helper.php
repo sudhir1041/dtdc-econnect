@@ -852,16 +852,20 @@ function shipsy_update_synced_consignment( string $order_id, string $ref_no, str
 			}
 		}
 
-		// phpcs:disable
-		return $wpdb->query(
-			$wpdb->prepare(
-				"UPDATE `$table_name` SET shipsy_refno=%s, status=%s, comment=%s WHERE orderId=%s",
-				array( $ref_no, $sync_status, $sync_comment, $order_id )
-			)
-		);
-		// phpcs:enable
-	}
-	return false;
+               // phpcs:disable
+               $result = $wpdb->query(
+                       $wpdb->prepare(
+                               "UPDATE `$table_name` SET shipsy_refno=%s, status=%s, comment=%s WHERE orderId=%s",
+                               array( $ref_no, $sync_status, $sync_comment, $order_id )
+                       )
+               );
+               // phpcs:enable
+
+               shipsy_update_wc_order_status( $order_id, $sync_status );
+
+               return $result;
+       }
+       return false;
 }
 
 /**
@@ -878,14 +882,18 @@ function shipsy_add_synced_consignment( string $order_id, string $ref_no, string
 	global $wpdb;
 	$table_name = $wpdb->prefix . 'sync_track_order';
 
-	// phpcs:disable
-	return $wpdb->query(
-		$wpdb->prepare(
-			"INSERT INTO `$table_name` (orderId, shipsy_refno, status, comment) VALUES (%s, %s, %s, %s)",
-			array( $order_id, $ref_no, $sync_status, $sync_comment )
-		)
-	);
-	// phpcs:enable
+       // phpcs:disable
+       $result = $wpdb->query(
+               $wpdb->prepare(
+                       "INSERT INTO `$table_name` (orderId, shipsy_refno, status, comment) VALUES (%s, %s, %s, %s)",
+                       array( $order_id, $ref_no, $sync_status, $sync_comment )
+               )
+       );
+       // phpcs:enable
+
+       shipsy_update_wc_order_status( $order_id, $sync_status );
+
+       return $result;
 }
 
 /**
@@ -1220,6 +1228,33 @@ function shipsy_send_whatsapp_notification( string $phone, string $first_name, s
 
         $request = shipsy_get_request_handler();
         $request->post( $url, $args );
+}
+
+/**
+ * Update WooCommerce order status based on DTDC consignment status.
+ *
+ * @param string $order_id          WooCommerce order ID.
+ * @param string $consignment_status Status returned from DTDC.
+ *
+ * @return void
+ */
+function shipsy_update_wc_order_status( string $order_id, string $consignment_status ) {
+       $order = wc_get_order( $order_id );
+       if ( ! $order ) {
+               return;
+       }
+
+       $status_map = array(
+               'Delivered'   => 'completed',
+               'Cancelled'   => 'cancelled',
+               'Sync Failed' => 'failed',
+       );
+
+       $wc_status = $status_map[ $consignment_status ] ?? 'processing';
+
+       if ( $order->get_status() !== $wc_status ) {
+               $order->update_status( $wc_status, 'Updated from DTDC' );
+       }
 }
 
 
